@@ -1,45 +1,57 @@
-# =========================
-# Dockerfile: PHP + Laravel + PostgreSQL + Vite + TailwindCSS
-# =========================
+FROM php:8.2-fpm
 
-# Base PHP 8.3
-FROM php:8.3.10
+# Copy composer.lock and composer.json
+#COPY ./code/composer.lock ./code/composer.json /var/www/
 
-# Instala dependências do sistema + extensões PHP para PostgreSQL
-RUN apt-get update -y && apt-get install -y \
-    openssl \
-    zip \
-    unzip \
-    git \
-    curl \
+# Set working directory
+WORKDIR /var/www
+
+# Install dependencies
+RUN curl -sL https://deb.nodesource.com/setup_10.x | bash - && \
+apt-get update && apt-get install -y \
     nodejs \
-    npm \
-    libpq-dev \
-    && docker-php-ext-install pdo pdo_pgsql \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    build-essential \
+    mariadb-client \
+    libpng-dev \
+    libjpeg62-turbo-dev \
+    libfreetype6-dev \
+    locales \
+    zip \
+    jpegoptim optipng pngquant gifsicle \
+    vim \
+    unzip \
+    libzip-dev \
+    git \
+    curl&& \
+    npm install -g npm
 
-# Instala Composer
+# Clear cache
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install extensions
+RUN docker-php-ext-install pdo_mysql mbstring zip exif pcntl
+RUN docker-php-ext-install mysqli && docker-php-ext-enable mysqli
+RUN docker-php-ext-configure gd --with-gd --with-freetype-dir=/usr/include/ --with-jpeg-dir=/usr/include/ --with-png-dir=/usr/include/
+RUN docker-php-ext-install gd
+
+# Install composer
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-# Define diretório da aplicação
-WORKDIR /app
+# Add user for laravel application
+#RUN groupadd -g 1000 www-data
+#RUN useradd -u 1000 -ms /bin/bash -g www-data www-data
 
-# Copia código da aplicação
-COPY . /app
+# Copy existing application directory contents
+COPY ./code /var/www
 
-# Instala dependências PHP
-RUN composer install --no-dev --optimize-autoloader
+# Copy existing application directory permissions
+COPY --chown=www-data:www-data ./code /var/www
 
-# Instala dependências Node e build frontend (Vite + TailwindCSS)
-RUN npm install
-RUN npm run build
+#RUN chown -R www-data:www-data /var/www
 
-# Ajusta permissões (opcional, dependendo do host)
-RUN chown -R www-data:www-data /app \
-    && chmod -R 755 /app
+# Change current user to www
+USER www-data
 
-# Expõe porta
-EXPOSE 8000
-
-# Comando padrão para rodar a aplicação
-CMD php artisan serve --host=0.0.0.0 --port=8000
+# Expose port 9000 and start php-fpm server
+EXPOSE 9000
+CMD ["php-fpm"]

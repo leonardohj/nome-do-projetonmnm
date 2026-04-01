@@ -1,50 +1,94 @@
-version: "3"
-networks:
-  application:
-    driver: bridge
+version: '3'
 services:
+
+  #PHP Service
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: mybackend
-    ports:
-      - 8000:8000
+    image: api/php
+    container_name: app
+    restart: unless-stopped
+    tty: true
+    working_dir: /var/www
     volumes:
-      - ./backend:/app
-    depends_on:
-      - db
-    environment:
-      - DB_HOST=pgdb
-      - DB_DATABASE=test-db
-      - DB_USERNAME=postgres
-      - DB_PASSWORD=postgres
-      - APP_ENV=local
-      - APP_KEY=base64:xVYXqXyDrj/14D6Af7Y2Gb5Y6qw+gnjMmdndX/s44qY=
+      - ./code:/var/www
+      - ./php/local.ini:/usr/local/etc/php/conf.d/local.ini
     networks:
-      - application
-    entrypoint: ["/bin/sh", "-c"]
-    command: |
-      composer install --no-dev --optimize-autoloader && \
-      npm install && \
-      npm run build && \
-      php artisan migrate --force && \
-      php artisan serve --host=0.0.0.0 --port=8000
+      - app-network
+
+  #Nginx Service
+  webserver:
+    image: nginx:alpine
+    container_name: webserver
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./code:/var/www
+      - ./nginx/conf.d/:/etc/nginx/conf.d/
+    networks:
+      - app-network
+
+  #MySQL Service
   db:
-    image: postgres:15
+    image: mysql:5.7.22
+    container_name: db
+    restart: unless-stopped
+    tty: true
     ports:
-      - "5432:5432"
-    volumes:
-      - ./data:/var/lib/postgresql/data
+      - "3306:3306"
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=test-db
+      MYSQL_DATABASE: api
+      MYSQL_ROOT_PASSWORD: pass
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ./mysql/my.cnf:/etc/mysql/my.cnf
     networks:
-      - application
-    container_name: mypgdb
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - app-network
+
+  #PHPMYADMIN Service
+  pma:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: pma
+    environment:
+      PMA_PORT: 3306
+      PMA_HOST: db
+      PMA_USER: root
+      PMA_PASSWORD: pass
+    ports:
+      - "8090:80"
+    networks:
+      - app-network
+
+  #MAILHOG
+  mail:
+    image: mailhog/mailhog:latest
+    container_name: mail
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - app-network
+
+  #Redis
+  redis:
+    image: redis:latest
+    restart: unless-stopped
+    ports:
+      - "6382:6379"
+    networks:
+      - app-network
+
+#Docker Networks
+networks:
+  app-network:
+    driver: bridge
+
+#Volumes
+volumes:
+  dbdata:
+    driver: local
